@@ -4,6 +4,7 @@ python-multipart>=0.0.12
 numpy>=1.26.0
 pillow>=10.4.0
 huggingface_hub>=0.26.0
+httpx>=0.27.0
 # Install the local Meta clone, not a PyPI wheel:
 #   pip install torch torchvision
 #   SAM2_BUILD_CUDA=0 pip install -e ../sam2

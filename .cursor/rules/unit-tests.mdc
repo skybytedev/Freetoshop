@@ -1,0 +1,38 @@
+---
+description: Require unit tests for every feature and run them after changes.
+alwaysApply: true
+---
+
+# Unit tests
+
+Every feature ships with unit tests. Do not leave a new tool, engine behavior, or SAM endpoint untested.
+
+## When you add or change a feature
+
+1. Add or update tests in the same change.
+2. Cover the happy path, empty/locked/missing selection, and one edge case.
+3. Run the suite before you call the work done (`npm test` and the Python tests).
+4. If a test would need the real SAM GPU, mock the HTTP client or use `SAM_DEMO=1`.
+
+## Where tests live
+
+| Code | Tests |
+|---|---|
+| `js/engine.js`, `js/selection.js`, `js/transform.js`, `js/sam.js`, `js/tools.js` | `tests/js/*.test.js` (Vitest) |
+| `sam-server/server.py` | `tests/test_sam_server.py` (unittest + FastAPI TestClient) |
+
+## How to run
+
+```bash
+npm test
+# or
+./test.sh
+```
+
+`test.sh` runs JS and Python. Python tests set `SAM_DEMO=1` and import `server` from `sam-server/` only — never from the repo root.
+
+## Style
+
+- Unit tests, not full browser E2E, unless the change is layout-only.
+- Prefer asserting pixels, selection bounds, layer geometry, and HTTP status over snapshots.
+- Do not skip a failing test to “finish” a feature. Fix the code or the test.

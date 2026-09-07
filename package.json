@@ -1,0 +1,14 @@
+{
+  "name": "freetoshop",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:js": "vitest run",
+    "test:py": "SAM_DEMO=1 sam-server/.venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.7"
+  }
+}

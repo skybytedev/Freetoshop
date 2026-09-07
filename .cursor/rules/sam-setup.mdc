@@ -1,0 +1,14 @@
+---
+description: Enable or fix local SAM 2 / Smart Select after a fresh clone. Follow SAM.md agent playbook.
+alwaysApply: true
+---
+
+# SAM 2 / Smart Select
+
+When the user cloned this repo and wants Smart Select, SAM, or “make selection work”:
+
+1. Open and follow **`SAM.md` → “Instructions for coding agents”**.
+2. Success is `curl http://127.0.0.1:8765/health` with `"demo": false`. Demo flood-fill is not success unless they asked for it.
+3. Never run Python from the Freetoshop repo root (the `sam2/` folder name shadows the package). Use `sam-server/` or `./start.sh`.
+4. Do not commit `sam2/`, `.venv`, `*.pt`, or `.run/`.
+5. Day-to-day launch is `./start.sh` / `./stop.sh` (see `README.md`).
