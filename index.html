@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Freetoshop</title>
+  <link rel="stylesheet" href="css/app.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">Freetoshop</div>
+      <div class="file-actions">
+        <button type="button" data-act="new">New</button>
+        <label class="btn">Open<input id="file-open" type="file" accept="image/*" multiple hidden /></label>
+        <button type="button" data-act="export">Export PNG</button>
+      </div>
+      <div id="tool-options" class="tool-options"></div>
+      <label class="sam-url">
+        SAM
+        <input id="sam-url" type="text" spellcheck="false" />
+      </label>
+      <div id="sam-status" class="sam-status" title="SAM server status">SAM…</div>
+    </header>
+
+    <div class="body">
+      <aside class="toolbar" id="toolbar"></aside>
+
+      <main class="stage-wrap" id="stage-wrap">
+        <canvas id="view"></canvas>
+        <div id="hint" class="hint">Drop an image to start — or Open</div>
+        <input id="text-input" class="text-input" type="text" hidden />
+      </main>
+
+      <aside class="sidebar">
+        <section class="panel">
+          <h2>Canvas</h2>
+          <div class="canvas-size">
+            <label>W <input id="canvas-w" type="number" min="1" max="8192" /></label>
+            <span>×</span>
+            <label>H <input id="canvas-h" type="number" min="1" max="8192" /></label>
+          </div>
+          <label class="anchor-row">
+            Anchor
+            <select id="canvas-anchor">
+              <option value="top-left">Top left</option>
+              <option value="center">Center</option>
+            </select>
+          </label>
+          <div class="layer-actions">
+            <button type="button" data-act="resize-canvas">Apply size</button>
+            <button type="button" data-act="fit-canvas">Fit content</button>
+          </div>
+        </section>
+        <section class="panel">
+          <h2>Color</h2>
+          <div class="color-row">
+            <input id="color" type="color" value="#1c1917" />
+            <button type="button" data-act="fill-layer">Fill layer</button>
+          </div>
+          <label class="slider">
+            Size
+            <input id="brush-size" type="range" min="1" max="200" value="24" />
+            <span id="brush-size-val">24</span>
+          </label>
+          <label class="slider">
+            Opacity
+            <input id="brush-opacity" type="range" min="5" max="100" value="100" />
+            <span id="brush-opacity-val">100%</span>
+          </label>
+        </section>
+
+        <section class="panel grow">
+          <div class="panel-head">
+            <h2>Layers</h2>
+            <button type="button" data-act="add-layer" title="New layer">+</button>
+          </div>
+          <ul id="layer-list" class="layer-list"></ul>
+          <div class="layer-actions">
+            <button type="button" data-act="dup-layer">Duplicate</button>
+            <button type="button" data-act="del-layer">Delete</button>
+          </div>
+          <label class="slider">
+            Layer opacity
+            <input id="layer-opacity" type="range" min="0" max="100" value="100" />
+            <span id="layer-opacity-val">100%</span>
+          </label>
+        </section>
+      </aside>
+    </div>
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
