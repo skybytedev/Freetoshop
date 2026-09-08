@@ -1,8 +1,8 @@
-import { Document, History } from "./engine.js";
-import { SamClient, defaultSamUrl } from "./sam.js";
-import { downloadProject, isProjectFile, readProjectFile } from "./project.js";
-import { TOOLS, createTools, drawSizeCursor, usesSizeCursor } from "./tools.js";
-import { applyTransform, drawTransformOverlay, drawTransformedLayer, startTransform } from "./transform.js";
+import { Document, History } from "./engine.js?v=3";
+import { SamClient, defaultSamUrl } from "./sam.js?v=3";
+import { downloadProject, isProjectFile, readProjectFile } from "./project.js?v=3";
+import { TOOLS, createTools, drawSizeCursor, usesSizeCursor } from "./tools.js?v=3";
+import { applyTransform, drawTransformOverlay, drawTransformedLayer, startTransform } from "./transform.js?v=3";
 
 const view = document.getElementById("view");
 const vctx = view.getContext("2d");
@@ -78,13 +78,8 @@ function renderToolbar() {
 function renderOptions() {
   const bits = [];
   if (app.tool === "smart") {
-    bits.push(`<button type="button" data-act="extract-cut">Extract (cut)</button>`);
-    bits.push(`<button type="button" data-act="extract-copy">Extract (copy)</button>`);
-    bits.push(`<button type="button" data-act="deselect">Deselect</button>`);
     bits.push(`<span>Click object · Shift add · Alt subtract</span>`);
   } else if (app.tool === "lasso") {
-    bits.push(`<button type="button" data-act="extract-cut">Extract (cut)</button>`);
-    bits.push(`<button type="button" data-act="deselect">Deselect</button>`);
     bits.push(`<span>Draw around the object</span>`);
   } else if (app.tool === "mask") {
     bits.push(`<span>Quick Mask — paint to add, Alt-paint to subtract, Q to exit</span>`);
@@ -98,7 +93,7 @@ function renderOptions() {
   } else if (app.tool === "hand") {
     bits.push(`<span>Drag to pan the canvas (also Space + drag)</span>`);
   } else if (app.tool === "zoom") {
-    bits.push(`<span>Drag away from screen center to zoom in · toward center to zoom out</span>`);
+    bits.push(`<span>Scroll to zoom · drag away from screen center to zoom in · toward center to zoom out</span>`);
   } else if (app.tool === "transform") {
     bits.push(`<button type="button" data-act="apply-xf">Apply</button>`);
     bits.push(`<button type="button" data-act="cancel-xf">Cancel</button>`);
@@ -657,8 +652,42 @@ layerMenu.addEventListener("click", (ev) => {
   if (cmd === "delete") act("del-layer");
 });
 
+const menus = [...document.querySelectorAll(".menubar .menu")];
+
+function closeMenus(except = null) {
+  for (const menu of menus) {
+    if (menu !== except && menu.open) menu.open = false;
+  }
+}
+
+function closeMenusOnEscape() {
+  const openMenu = menus.find((menu) => menu.open);
+  if (!openMenu) return false;
+  openMenu.open = false;
+  return true;
+}
+
+for (const menu of menus) {
+  menu.addEventListener("toggle", () => {
+    if (menu.open) closeMenus(menu);
+  });
+  menu.querySelector("summary")?.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0) return;
+    closeMenus(menu);
+  });
+}
+
+document.querySelector(".menubar")?.addEventListener("click", (ev) => {
+  const menu = ev.target.closest(".menu");
+  if (!menu || menu.dataset.menu === "setup") return;
+  if (ev.target.closest("[data-act], .menu-item")) {
+    menu.open = false;
+  }
+});
+
 document.addEventListener("pointerdown", (ev) => {
   if (!layerMenu.hidden && !ev.target.closest("#layer-menu")) hideLayerMenu();
+  if (!ev.target.closest(".menubar")) closeMenus();
 });
 
 let dragLayerId = null;
@@ -815,14 +844,20 @@ view.addEventListener("pointerup", (ev) => {
 });
 
 stage.addEventListener("wheel", (ev) => {
+  const modifierZoom = ev.metaKey || ev.ctrlKey;
+  if (app.tool !== "zoom" && !modifierZoom) return;
   ev.preventDefault();
   const factor = ev.deltaY < 0 ? 1.08 : 1 / 1.08;
   app.doc.zoom = Math.min(8, Math.max(0.08, app.doc.zoom * factor));
 }, { passive: false });
 
-.window.addEventListener("keydown", (ev) => {
+window.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && !layerMenu.hidden) {
     hideLayerMenu();
+    return;
+  }
+  if (ev.key === "Escape" && closeMenusOnEscape()) {
+    ev.preventDefault();
     return;
   }
   if (ev.target.matches("input, textarea")) return;
@@ -890,6 +925,17 @@ window.addEventListener("keyup", (ev) => {
   }
 });
 
+const samDot = document.getElementById("sam-status-dot");
+
+function syncSamDot() {
+  if (!samDot) return;
+  samDot.classList.remove("ok", "demo", "down");
+  if (samStatus.classList.contains("ok")) samDot.classList.add("ok");
+  else if (samStatus.classList.contains("demo")) samDot.classList.add("demo");
+  else if (samStatus.classList.contains("down")) samDot.classList.add("down");
+  samDot.title = samStatus.title || samStatus.textContent;
+}
+
 async function pingSam() {
   const h = await app.sam.ping();
   samStatus.classList.remove("ok", "demo", "down");
@@ -897,17 +943,20 @@ async function pingSam() {
     samStatus.classList.add("down");
     samStatus.textContent = "SAM offline";
     samStatus.title = "Start sam-server — see SAM.md";
+    syncSamDot();
     return;
   }
   if (h.demo) {
     samStatus.classList.add("demo");
     samStatus.textContent = "SAM demo";
     samStatus.title = `${h.model} — flood-fill only. Install SAM 2 for real cutouts.`;
+    syncSamDot();
     return;
   }
   samStatus.classList.add("ok");
   samStatus.textContent = `SAM ${h.device}`;
   samStatus.title = h.model;
+  syncSamDot();
 }
 
 window.addEventListener("resize", resizeView);

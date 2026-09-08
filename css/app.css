@@ -62,7 +62,93 @@ button:hover, .btn:hover { border-color: var(--accent-dim); }
   padding-right: 8px;
 }
 
-.file-actions { display: flex; gap: 6px; }
+.menubar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.menu { position: relative; }
+
+.menu > summary {
+  list-style: none;
+  cursor: default;
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: var(--text);
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.menu > summary::-webkit-details-marker { display: none; }
+.menu > summary::marker { content: ""; }
+.menu > summary:hover,
+.menu[open] > summary { background: var(--panel-2); }
+
+.menu:not([open]) > .menu-panel {
+  display: none;
+}
+
+.menu-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 1000;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.menu-panel button,
+.menu-panel .menu-item {
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+}
+
+.menu-panel button:hover,
+.menu-panel .menu-item:hover { background: #322718; }
+
+.menu-panel-setup {
+  min-width: 260px;
+  padding: 10px;
+  gap: 8px;
+}
+
+.menu-panel-setup .sam-url {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.menu-panel-setup .sam-url input { width: 100%; }
+
+.sam-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+
+.sam-dot.ok { background: #b7d48a; }
+.sam-dot.demo { background: var(--accent); }
+.sam-dot.down { background: var(--danger); }
 
 .tool-options {
   flex: 1;

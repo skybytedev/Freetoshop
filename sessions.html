@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Freetoshop — Sessions</title>
+  <link rel="stylesheet" href="/css/app.css" />
+  <style>
+    body.sessions-page {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(1200px 600px at 20% -10%, #3a3228, #1c1917 55%);
+      color: #f5f0e8;
+      font: 15px/1.45 "Avenir Next", "Segoe UI", sans-serif;
+    }
+    .sessions-wrap {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+    .sessions-wrap header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .sessions-wrap h1 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+    .sessions-wrap a.back {
+      color: #e0a14a;
+      text-decoration: none;
+    }
+    .sessions-wrap h2 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #a89f91;
+      margin: 28px 0 12px;
+    }
+    .session-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 8px;
+    }
+    .session-list li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      background: rgba(50, 39, 24, 0.65);
+      border: 1px solid #4a3f32;
+      border-radius: 8px;
+    }
+    .session-list .meta {
+      min-width: 0;
+    }
+    .session-list .name {
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .session-list .sub {
+      font-size: 12px;
+      color: #a89f91;
+    }
+    .session-list .actions {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .session-list button, .session-list a.btn {
+      appearance: none;
+      border: 1px solid #6b5a45;
+      background: #2a231c;
+      color: #f5f0e8;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .session-list button.primary, .session-list a.btn.primary {
+      border-color: #e0a14a;
+      color: #e0a14a;
+    }
+    .empty, .error {
+      color: #a89f91;
+      padding: 12px 0;
+    }
+    .error { color: #e07a6a; }
+  </style>
+</head>
+<body class="sessions-page">
+  <div class="sessions-wrap">
+    <header>
+      <h1>Sessions</h1>
+      <a class="back" href="/">← Editor</a>
+    </header>
+    <p class="sub">Saved composites from <code>fts/</code>. Opening a session loads it into the editor and starts a new temp draft.</p>
+    <h2>Recent</h2>
+    <ul id="recent" class="session-list"><li class="empty">Loading…</li></ul>
+    <h2>All saved</h2>
+    <ul id="all" class="session-list"><li class="empty">Loading…</li></ul>
+  </div>
+  <script type="module">
+    const recentEl = document.getElementById("recent");
+    const allEl = document.getElementById("all");
+
+    function fmt(ts) {
+      try {
+        return new Date(ts).toLocaleString();
+      } catch {
+        return ts || "";
+      }
+    }
+
+    function row(s) {
+      const li = document.createElement("li");
+      li.innerHTML = `
+        <div class="meta">
+          <div class="name"></div>
+          <div class="sub"></div>
+        </div>
+        <div class="actions">
+          <a class="btn primary" href="#">Open</a>
+          <button type="button" data-del>Delete</button>
+        </div>`;
+      li.querySelector(".name").textContent = s.name || s.id;
+      li.querySelector(".sub").textContent = `${s.width || "?"}×${s.height || "?"} · ${s.layerCount ?? "?"} layers · ${fmt(s.updatedAt)}`;
+      const open = li.querySelector("a");
+      open.href = `/?openFts=${encodeURIComponent(s.id)}`;
+      li.querySelector("[data-del]").addEventListener("click", async () => {
+        if (!confirm(`Delete “${s.name}”?`)) return;
+        await fetch(`/api/fts/${encodeURIComponent(s.id)}`, { method: "DELETE" });
+        li.remove();
+      });
+      return li;
+    }
+
+    function fill(el, items) {
+      el.innerHTML = "";
+      if (!items.length) {
+        el.innerHTML = `<li class="empty">No saved sessions yet. Use Save in the editor.</li>`;
+        return;
+      }
+      for (const s of items) el.appendChild(row(s));
+    }
+
+    try {
+      const res = await fetch("/api/fts");
+      if (!res.ok) throw new Error("App server not reachable");
+      const data = await res.json();
+      fill(recentEl, data.recent || []);
+      fill(allEl, data.sessions || []);
+    } catch (err) {
+      recentEl.innerHTML = `<li class="error">${err.message}. Start with ./start-with-app.sh</li>`;
+      allEl.innerHTML = "";
+    }
+  </script>
+</body>
+</html>

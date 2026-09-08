@@ -10,18 +10,36 @@
   <div id="app">
     <header class="topbar">
       <div class="brand">Freetoshop</div>
-      <div class="file-actions">
-        <button type="button" data-act="new">New</button>
-        <label class="btn">Open<input id="file-open" type="file" accept="image/*,.json,.freetoshop.json,application/json" multiple hidden /></label>
-        <button type="button" data-act="save" title="Save project (Ctrl/Cmd+S)">Save</button>
-        <button type="button" data-act="export" title="Flattened PNG">Export PNG</button>
-      </div>
+      <nav class="menubar" aria-label="Application">
+        <details class="menu" name="app-menu" data-menu="file">
+          <summary>File</summary>
+          <div class="menu-panel" role="menu">
+            <button type="button" role="menuitem" data-act="new">New</button>
+            <label class="menu-item" role="menuitem">Open<input id="file-open" type="file" accept="image/*,.json,.freetoshop.json,application/json" multiple hidden /></label>
+            <button type="button" role="menuitem" data-act="save" title="Save project (Ctrl/Cmd+S)">Save</button>
+            <button type="button" role="menuitem" data-act="export" title="Flattened PNG">Export PNG</button>
+          </div>
+        </details>
+        <details class="menu" name="app-menu" data-menu="selection">
+          <summary>Selection</summary>
+          <div class="menu-panel" role="menu">
+            <button type="button" role="menuitem" data-act="extract-cut">Extract cut</button>
+            <button type="button" role="menuitem" data-act="extract-copy">Extract copy</button>
+            <button type="button" role="menuitem" data-act="deselect">Deselect</button>
+          </div>
+        </details>
+        <details class="menu" name="app-menu" data-menu="setup">
+          <summary>Setup <span id="sam-status-dot" class="sam-dot" title="SAM server status"></span></summary>
+          <div class="menu-panel menu-panel-setup">
+            <label class="sam-url">
+              SAM
+              <input id="sam-url" type="text" spellcheck="false" />
+            </label>
+            <div id="sam-status" class="sam-status" title="SAM server status">SAM…</div>
+          </div>
+        </details>
+      </nav>
       <div id="tool-options" class="tool-options"></div>
-      <label class="sam-url">
-        SAM
-        <input id="sam-url" type="text" spellcheck="false" />
-      </label>
-      <div id="sam-status" class="sam-status" title="SAM server status">SAM…</div>
     </header>
 
     <div class="body">
@@ -92,6 +110,6 @@
     <button type="button" role="menuitem" data-layer-cmd="link">Link / Unlink</button>
     <button type="button" role="menuitem" data-layer-cmd="delete">Delete</button>
   </div>
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="js/main.js?v=zoom1"></script>
 </body>
 </html>
