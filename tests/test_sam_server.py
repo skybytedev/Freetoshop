@@ -52,6 +52,25 @@ class FloodMaskTests(unittest.TestCase):
         self.assertEqual(im.getpixel((1, 1))[3], 255)
 
 
+class DetectDeviceTests(unittest.TestCase):
+    def test_forced_device_wins(self):
+        self.assertEqual(server.detect_device("cpu"), "cpu")
+        self.assertEqual(server.detect_device("cuda"), "cuda")
+
+    def test_intel_mac_skips_broken_mps(self):
+        """x86_64 torch can report MPS available without working ops."""
+        import platform
+        import unittest.mock as mock
+
+        if platform.machine() != "x86_64":
+            self.skipTest("Intel Mac only")
+        fake_torch = mock.MagicMock()
+        fake_torch.cuda.is_available.return_value = False
+        fake_torch.backends.mps.is_available.return_value = True
+        with mock.patch.dict(sys.modules, {"torch": fake_torch}):
+            self.assertEqual(server.detect_device(), "cpu")
+
+
 class ApiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

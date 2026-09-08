@@ -1,6 +1,7 @@
 import { Document, History } from "./engine.js";
 import { SamClient, defaultSamUrl } from "./sam.js";
-import { TOOLS, createTools } from "./tools.js";
+import { downloadProject, isProjectFile, readProjectFile } from "./project.js";
+import { TOOLS, createTools, drawSizeCursor, usesSizeCursor } from "./tools.js";
 import { applyTransform, drawTransformOverlay, drawTransformedLayer, startTransform } from "./transform.js";
 
 const view = document.getElementById("view");
@@ -27,6 +28,8 @@ const app = {
   space: false,
   panning: false,
   panLast: null,
+  pointerDoc: null,
+  zoomDragDir: null,
   ants: 0,
   textPos: null,
   xf: null,
@@ -53,6 +56,8 @@ samUrlInput.value = defaultSamUrl();
 
 const ICONS = {
   move: '<svg viewBox="0 0 24 24"><path d="M12 2v20M2 12h20M7 7l5-5 5 5M7 17l5 5 5-5"/></svg>',
+  hand: '<svg viewBox="0 0 24 24"><path d="M8 11V6a1.5 1.5 0 0 1 3 0v4M11 10V4.5a1.5 1.5 0 0 1 3 0V10M14 10V5.5a1.5 1.5 0 0 1 3 0V14c0 3.5-2 6-5.5 6S6 17 6 14v-3a1.5 1.5 0 0 1 3 0"/></svg>',
+  zoom: '<svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="M14.5 14.5L20 20M8 10h4M10 8v4"/></svg>',
   smart: '<svg viewBox="0 0 24 24"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5z"/><circle cx="18" cy="18" r="3"/></svg>',
   lasso: '<svg viewBox="0 0 24 24"><path d="M7 16c-2-2-3-5-1-8 2-4 8-6 12-3 3 2 3 7 1 10-2 4-8 5-12 2z"/></svg>',
   mask: '<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 12h16"/></svg>',
@@ -89,11 +94,15 @@ function renderOptions() {
   } else if (app.tool === "text") {
     bits.push(`<span>Click to type. Size slider sets type size.</span>`);
   } else if (app.tool === "move") {
-    bits.push(`<span>Drag the active layer</span>`);
+    bits.push(`<span>Click to select · drag to move · linked layers move together</span>`);
+  } else if (app.tool === "hand") {
+    bits.push(`<span>Drag to pan the canvas (also Space + drag)</span>`);
+  } else if (app.tool === "zoom") {
+    bits.push(`<span>Drag away from screen center to zoom in · toward center to zoom out</span>`);
   } else if (app.tool === "transform") {
     bits.push(`<button type="button" data-act="apply-xf">Apply</button>`);
     bits.push(`<button type="button" data-act="cancel-xf">Cancel</button>`);
-    bits.push(`<span>Drag handles to scale · rotate knob · Shift constrains · Enter applies</span>`);
+    bits.push(`<span>Drag handles to scale · cross center to flip · rotate knob · Shift constrains · Enter applies</span>`);
   }
   if (options.dataset.note) bits.push(`<span>${escapeHtml(options.dataset.note)}</span>`);
   options.innerHTML = bits.join("");
@@ -105,9 +114,12 @@ function renderLayers() {
     .map((l) => {
       const active = l.id === app.doc.activeId ? " active" : "";
       const hidden = l.visible ? "" : " hidden-layer";
-      return `<li class="${active}${hidden}" data-id="${l.id}">
-        <span class="eye" data-eye="${l.id}">${l.visible ? "◉" : "○"}</span>
-        <input type="text" value="${escapeAttr(l.name)}" data-rename="${l.id}" />
+      const linked = l.linkGroup ? " linked" : "";
+      return `<li class="${active}${hidden}${linked}" data-id="${l.id}">
+        <span class="grip" draggable="true" title="Drag to reorder" aria-hidden="true">⋮⋮</span>
+        <span class="eye" data-eye="${l.id}" title="Visibility">${l.visible ? "◉" : "○"}</span>
+        <span class="link${l.linkGroup ? " on" : ""}" data-link="${l.id}" title="${l.linkGroup ? "Unlink layer" : "Link with active layer"}">⛓</span>
+        <span class="layer-name">${escapeHtml(l.name)}</span>
       </li>`;
     })
     .join("");
@@ -115,6 +127,53 @@ function renderLayers() {
   document.getElementById("layer-opacity").value = String(op);
   document.getElementById("layer-opacity-val").textContent = `${op}%`;
   renderCanvasSize();
+}
+
+function selectLayer(id) {
+  if (!id || !app.doc.layers.some((l) => l.id === id)) return;
+  if (app.xf && id !== app.xf.layerId) commitTransform();
+  app.doc.activeId = id;
+  app.smartPoints = [];
+  app.sam.sessionId = null;
+  if (app.tool === "transform") beginTransform();
+  renderLayers();
+  renderOptions();
+}
+
+app.selectLayer = selectLayer;
+
+function beginRename(layerId) {
+  const row = layerList.querySelector(`li[data-id="${CSS.escape(layerId)}"]`);
+  const nameEl = row?.querySelector(".layer-name");
+  const layer = app.doc.layers.find((l) => l.id === layerId);
+  if (!nameEl || !layer) return;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "layer-rename";
+  input.value = layer.name;
+  nameEl.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = (commit) => {
+    if (done) return;
+    done = true;
+    if (commit) {
+      const next = input.value.trim();
+      if (next) layer.name = next;
+    }
+    renderLayers();
+  };
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      finish(true);
+    } else if (ev.key === "Escape") {
+      ev.preventDefault();
+      finish(false);
+    }
+  });
+  input.addEventListener("blur", () => finish(true));
 }
 
 function renderCanvasSize() {
@@ -268,6 +327,10 @@ function frame() {
 
   if (app.xf) drawTransformOverlay(vctx, app.xf, z);
 
+  if (usesSizeCursor(app.tool) && app.pointerDoc && !app.panning && !app.space) {
+    drawSizeCursor(vctx, app.pointerDoc, app.brushSize, z);
+  }
+
   vctx.restore();
   requestAnimationFrame(frame);
 }
@@ -309,9 +372,42 @@ function setTool(id) {
     app.tool = id;
   }
   if (app.tool === "transform") beginTransform();
+  updateViewCursor();
   renderToolbar();
   renderOptions();
 }
+
+function updateViewCursor(pos) {
+  if (app.panning) {
+    view.style.cursor = "grabbing";
+    return;
+  }
+  if (app.tool === "hand" || app.space) {
+    view.style.cursor = "grab";
+    return;
+  }
+  if (app.tool === "zoom") {
+    view.style.cursor = app.zoomDragDir === "out" ? "zoom-out" : "zoom-in";
+    return;
+  }
+  if (usesSizeCursor(app.tool)) {
+    view.style.cursor = "none";
+    return;
+  }
+  if (app.tool === "transform" && app.xf && pos) {
+    const hit = app.tools.hover(app.tool, pos);
+    view.style.cursor = hit === "rotate" ? "crosshair" : hit === "move" ? "move" : hit ? "nwse-resize" : "default";
+    return;
+  }
+  view.style.cursor = "";
+}
+
+function viewCenter() {
+  const r = view.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+app.viewCenter = viewCenter;
 
 function commitText() {
   const text = textInput.value;
@@ -330,9 +426,32 @@ function commitText() {
   app.textPos = null;
 }
 
+async function openProjectFile(file) {
+  try {
+    const doc = await readProjectFile(file);
+    app.doc = doc;
+    app.history = new History();
+    app.history.push(app.doc);
+    app.smartPoints = [];
+    app.xf = null;
+    hint.classList.add("hidden");
+    renderLayers();
+    renderCanvasSize();
+    app.setStatus(`Opened ${file.name}`);
+  } catch (err) {
+    app.setStatus(err.message || "Could not open project");
+  }
+}
+
 async function importFiles(files) {
+  const list = [...files];
+  const project = list.find(isProjectFile);
+  if (project) {
+    await openProjectFile(project);
+    return;
+  }
   const images = [];
-  for (const file of files) {
+  for (const file of list) {
     if (!file.type.startsWith("image/")) continue;
     const bmp = await createImageBitmap(file);
     images.push({ bmp, name: file.name.replace(/\.[^.]+$/, "") });
@@ -356,6 +475,12 @@ async function importFiles(files) {
   hint.classList.add("hidden");
   renderLayers();
   renderCanvasSize();
+}
+
+function saveProject() {
+  if (app.xf) commitTransform();
+  downloadProject(app.doc);
+  app.setStatus("Project saved — open the .freetoshop.json later to continue");
 }
 
 function exportPng() {
@@ -383,6 +508,7 @@ function newDoc() {
 
 function act(name) {
   if (name === "new") newDoc();
+  if (name === "save") saveProject();
   if (name === "export") exportPng();
   if (name === "add-layer") {
     app.history.push(app.doc);
@@ -461,24 +587,141 @@ document.addEventListener("click", (ev) => {
       layer.visible = !layer.visible;
       renderLayers();
     }
+    return;
   }
-  const row = ev.target.closest("#layer-list li");
-  if (row && !ev.target.closest("[data-eye]") && row.dataset.id) {
-    if (app.xf && row.dataset.id !== app.xf.layerId) commitTransform();
-    app.doc.activeId = row.dataset.id;
-    app.smartPoints = [];
-    app.sam.sessionId = null;
-    if (app.tool === "transform") beginTransform();
+  const linkBtn = ev.target.closest("[data-link]");
+  if (linkBtn) {
+    const id = linkBtn.dataset.link;
+    app.history.push(app.doc);
+    if (!app.doc.toggleLink(id)) app.history.undoStack.pop();
     renderLayers();
-    renderOptions();
+    return;
+  }
+  if (ev.target.closest(".layer-rename")) return;
+  const row = ev.target.closest("#layer-list li");
+  if (row && !ev.target.closest(".grip") && row.dataset.id) {
+    if (row.dataset.id !== app.doc.activeId) selectLayer(row.dataset.id);
   }
 });
 
-layerList.addEventListener("change", (ev) => {
-  const input = ev.target.closest("[data-rename]");
-  if (!input) return;
-  const layer = app.doc.layers.find((l) => l.id === input.dataset.rename);
-  if (layer) layer.name = input.value;
+const layerMenu = document.getElementById("layer-menu");
+let menuLayerId = null;
+
+function hideLayerMenu() {
+  layerMenu.hidden = true;
+  menuLayerId = null;
+}
+
+function showLayerMenu(clientX, clientY, layerId) {
+  menuLayerId = layerId;
+  const delBtn = layerMenu.querySelector('[data-layer-cmd="delete"]');
+  delBtn.disabled = app.doc.layers.length <= 1;
+  layerMenu.hidden = false;
+  layerMenu.style.left = `${clientX}px`;
+  layerMenu.style.top = `${clientY}px`;
+  requestAnimationFrame(() => {
+    const r = layerMenu.getBoundingClientRect();
+    if (r.right > window.innerWidth) {
+      layerMenu.style.left = `${Math.max(8, window.innerWidth - r.width - 8)}px`;
+    }
+    if (r.bottom > window.innerHeight) {
+      layerMenu.style.top = `${Math.max(8, window.innerHeight - r.height - 8)}px`;
+    }
+  });
+}
+
+layerList.addEventListener("contextmenu", (ev) => {
+  const row = ev.target.closest("li[data-id]");
+  if (!row) return;
+  ev.preventDefault();
+  showLayerMenu(ev.clientX, ev.clientY, row.dataset.id);
+});
+
+layerMenu.addEventListener("click", (ev) => {
+  const cmd = ev.target.closest("[data-layer-cmd]")?.dataset.layerCmd;
+  if (!cmd || !menuLayerId) return;
+  const id = menuLayerId;
+  hideLayerMenu();
+  if (cmd === "link") {
+    app.history.push(app.doc);
+    if (!app.doc.toggleLink(id)) app.history.undoStack.pop();
+    renderLayers();
+    return;
+  }
+  if (app.doc.activeId !== id) selectLayer(id);
+  if (cmd === "rename") {
+    beginRename(id);
+    return;
+  }
+  if (cmd === "duplicate") act("dup-layer");
+  if (cmd === "delete") act("del-layer");
+});
+
+document.addEventListener("pointerdown", (ev) => {
+  if (!layerMenu.hidden && !ev.target.closest("#layer-menu")) hideLayerMenu();
+});
+
+let dragLayerId = null;
+
+layerList.addEventListener("dragstart", (ev) => {
+  const grip = ev.target.closest(".grip");
+  const row = grip?.closest("li[data-id]");
+  if (!row) {
+    ev.preventDefault();
+    return;
+  }
+  dragLayerId = row.dataset.id;
+  row.classList.add("dragging");
+  ev.dataTransfer.effectAllowed = "move";
+  ev.dataTransfer.setData("text/plain", dragLayerId);
+});
+
+layerList.addEventListener("dragend", () => {
+  dragLayerId = null;
+  for (const el of layerList.querySelectorAll(".dragging, .drag-over, .drag-before, .drag-after")) {
+    el.classList.remove("dragging", "drag-over", "drag-before", "drag-after");
+  }
+});
+
+layerList.addEventListener("dragover", (ev) => {
+  if (!dragLayerId) return;
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = "move";
+  const row = ev.target.closest("li[data-id]");
+  for (const el of layerList.querySelectorAll(".drag-over, .drag-before, .drag-after")) {
+    el.classList.remove("drag-over", "drag-before", "drag-after");
+  }
+  if (!row || row.dataset.id === dragLayerId) return;
+  const rect = row.getBoundingClientRect();
+  const before = ev.clientY < rect.top + rect.height / 2;
+  row.classList.add("drag-over", before ? "drag-before" : "drag-after");
+});
+
+layerList.addEventListener("drop", (ev) => {
+  ev.preventDefault();
+  const row = ev.target.closest("li[data-id]");
+  const fromId = dragLayerId || ev.dataTransfer.getData("text/plain");
+  if (!row || !fromId) return;
+  const targetId = row.dataset.id;
+  if (targetId === fromId) return;
+
+  const n = app.doc.layers.length;
+  const ui = [...app.doc.layers].reverse();
+  const fromUi = ui.findIndex((l) => l.id === fromId);
+  let toUi = ui.findIndex((l) => l.id === targetId);
+  if (fromUi < 0 || toUi < 0) return;
+
+  const rect = row.getBoundingClientRect();
+  const before = ev.clientY < rect.top + rect.height / 2;
+  if (!before) toUi += 1;
+  if (fromUi < toUi) toUi -= 1;
+  if (fromUi === toUi) return;
+
+  app.history.push(app.doc);
+  if (app.doc.reorder(n - 1 - fromUi, n - 1 - toUi)) {
+    if (app.xf) commitTransform();
+    renderLayers();
+  }
 });
 
 document.getElementById("file-open").addEventListener("change", (ev) => {
@@ -548,25 +791,27 @@ view.addEventListener("pointermove", (ev) => {
     app.doc.panX += ev.clientX - app.panLast.x;
     app.doc.panY += ev.clientY - app.panLast.y;
     app.panLast = { x: ev.clientX, y: ev.clientY };
+    updateViewCursor();
     return;
   }
   const pos = docFromEvent(ev);
+  app.pointerDoc = pos;
   app.tools.pointermove(app.tool, ev, pos);
-  if (app.tool === "transform" && app.xf) {
-    const hit = app.tools.hover(app.tool, pos);
-    view.style.cursor = hit === "rotate" ? "crosshair" : hit === "move" ? "move" : hit ? "nwse-resize" : "default";
-  } else if (!app.panning) {
-    view.style.cursor = "";
-  }
+  updateViewCursor(pos);
+});
+
+view.addEventListener("pointerleave", () => {
+  if (!app.panning) app.pointerDoc = null;
 });
 
 view.addEventListener("pointerup", (ev) => {
   if (app.panning) {
     app.panning = false;
     app.panLast = null;
-    return;
   }
-  app.tools.pointerup(app.tool, ev, docFromEvent(ev));
+  app.pointerDoc = docFromEvent(ev);
+  app.tools.pointerup(app.tool, ev, app.pointerDoc);
+  updateViewCursor(app.pointerDoc);
 });
 
 stage.addEventListener("wheel", (ev) => {
@@ -575,10 +820,15 @@ stage.addEventListener("wheel", (ev) => {
   app.doc.zoom = Math.min(8, Math.max(0.08, app.doc.zoom * factor));
 }, { passive: false });
 
-window.addEventListener("keydown", (ev) => {
+.window.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && !layerMenu.hidden) {
+    hideLayerMenu();
+    return;
+  }
   if (ev.target.matches("input, textarea")) return;
   if (ev.code === "Space") {
     app.space = true;
+    updateViewCursor(app.pointerDoc);
     ev.preventDefault();
   }
   const key = ev.key.toLowerCase();
@@ -588,6 +838,11 @@ window.addEventListener("keydown", (ev) => {
     if (ev.shiftKey) app.history.redo(app.doc);
     else app.history.undo(app.doc);
     renderLayers();
+    return;
+  }
+  if ((ev.metaKey || ev.ctrlKey) && key === "s") {
+    ev.preventDefault();
+    saveProject();
     return;
   }
   if ((ev.metaKey || ev.ctrlKey) && key === "d") {
@@ -629,7 +884,10 @@ window.addEventListener("keydown", (ev) => {
 });
 
 window.addEventListener("keyup", (ev) => {
-  if (ev.code === "Space") app.space = false;
+  if (ev.code === "Space") {
+    app.space = false;
+    if (!app.panning) updateViewCursor(app.pointerDoc);
+  }
 });
 
 async function pingSam() {

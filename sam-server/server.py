@@ -43,11 +43,18 @@ def detect_device(forced: Optional[str] = None) -> str:
     if forced:
         return forced
     try:
+        import platform
         import torch
 
         if torch.cuda.is_available():
             return "cuda"
-        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        # Intel Mac / x86_64 torch can report MPS available while missing ops
+        # (e.g. upsample_bicubic2d). Only use MPS on Apple Silicon.
+        if (
+            platform.machine() == "arm64"
+            and hasattr(torch.backends, "mps")
+            and torch.backends.mps.is_available()
+        ):
             return "mps"
     except Exception:
         pass

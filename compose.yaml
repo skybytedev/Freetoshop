@@ -1,0 +1,61 @@
+# Freetoshop — static editor + local SAM 2 Smart Select
+#
+# Host ports (see docs/DOCKER-PORTS.md):
+#   Web  http://localhost:3030
+#   SAM  http://localhost:8765   (matches the editor default URL)
+#
+# Usage:
+#   docker compose up -d --build
+#   # Real SAM (not demo): clone sam2/ + download a .pt first (see SAM.md), then:
+#   docker compose up -d --build
+#
+# Optional overrides in .env:
+#   WEB_PORT=3030
+#   FORWARD_SAM_PORT=8765
+#   SAM_DEMO=1          # force flood-fill
+#   SAM_SIZE=small
+
+name: freetoshop
+
+services:
+  web:
+    container_name: Freetoshop_Web
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - '${WEB_PORT:-3030}:80'
+    restart: unless-stopped
+    depends_on:
+      - sam
+
+  sam:
+    container_name: Freetoshop_SAM
+    build:
+      context: ./sam-server
+      dockerfile: Dockerfile
+    ports:
+      - '${FORWARD_SAM_PORT:-8765}:8765'
+    environment:
+      SAM_HOST: '0.0.0.0'
+      SAM_PORT: '8765'
+      SAM_SIZE: ${SAM_SIZE:-small}
+      SAM_DEVICE: ${SAM_DEVICE:-}
+      SAM_DEMO: ${SAM_DEMO:-}
+      SAM_CHECKPOINT: ${SAM_CHECKPOINT:-}
+      SAM_CONFIG: ${SAM_CONFIG:-}
+      SAM_MODEL: ${SAM_MODEL:-facebook/sam2.1-hiera-small}
+    volumes:
+      # Official Meta clone + checkpoints (gitignored). Missing → demo mode.
+      - ./sam2:/sam2
+      - huggingface-cache:/root/.cache/huggingface
+    healthcheck:
+      test: ['CMD', 'curl', '-sf', 'http://127.0.0.1:8765/health']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+volumes:
+  huggingface-cache:

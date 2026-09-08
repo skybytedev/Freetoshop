@@ -2,3 +2,4 @@
 node_modules/
 .run/
 sam-server/.venv/
+.env

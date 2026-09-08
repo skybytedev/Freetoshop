@@ -41,6 +41,101 @@ describe("layers", () => {
     doc.moveActive(-1);
     expect(names()).toEqual(["B", "Background", "A"]);
   });
+
+  it("reorders a layer by index", () => {
+    const doc = new Document(16, 16);
+    doc.addLayer("A");
+    doc.addLayer("B");
+    const names = () => doc.layers.map((l) => l.name);
+    expect(doc.reorder(2, 0)).toBe(true);
+    expect(names()).toEqual(["B", "Background", "A"]);
+    expect(doc.reorder(0, 0)).toBe(false);
+    expect(doc.reorder(-1, 1)).toBe(false);
+    expect(doc.moveLayer(doc.layers[2].id, 1)).toBe(true);
+    expect(names()).toEqual(["B", "A", "Background"]);
+  });
+
+  it("hit-tests the topmost opaque visible layer", () => {
+    const doc = new Document(40, 40);
+    doc.active.ctx.fillStyle = "#c44840";
+    doc.active.ctx.fillRect(0, 0, 40, 40);
+    const top = doc.addLayer("Top", 20, 20, 5, 5);
+    top.ctx.fillStyle = "#224488";
+    top.ctx.fillRect(0, 0, 20, 20);
+    expect(doc.hitTestLayer(10, 10)?.name).toBe("Top");
+    expect(doc.hitTestLayer(30, 30)?.name).toBe("Background");
+    top.visible = false;
+    expect(doc.hitTestLayer(10, 10)?.name).toBe("Background");
+    expect(doc.hitTestLayer(100, 100)).toBeNull();
+  });
+
+  it("skips fully transparent pixels during hit-test", () => {
+    const doc = new Document(20, 20);
+    doc.active.ctx.fillStyle = "#c44840";
+    doc.active.ctx.fillRect(0, 0, 10, 10);
+    expect(doc.hitTestLayer(2, 2)?.name).toBe("Background");
+    expect(doc.hitTestLayer(15, 15)).toBeNull();
+  });
+});
+
+describe("linked layers", () => {
+  it("links layers into a group without changing stack order", () => {
+    const doc = new Document(16, 16);
+    const a = doc.addLayer("A");
+    const b = doc.addLayer("B");
+    doc.activeId = a.id;
+    expect(doc.toggleLink(b.id)).toBe(true);
+    expect(a.linkGroup).toBeTruthy();
+    expect(b.linkGroup).toBe(a.linkGroup);
+    expect(doc.layers.map((l) => l.name)).toEqual(["Background", "A", "B"]);
+    expect(doc.linkedLayers(a).map((l) => l.name)).toEqual(["A", "B"]);
+  });
+
+  it("unlinks and prunes singleton groups", () => {
+    const doc = new Document(16, 16);
+    const a = doc.addLayer("A");
+    const b = doc.addLayer("B");
+    doc.activeId = a.id;
+    doc.toggleLink(b.id);
+    expect(doc.toggleLink(b.id)).toBe(true);
+    expect(b.linkGroup).toBeNull();
+    expect(a.linkGroup).toBeNull();
+  });
+
+  it("does not link a layer to itself", () => {
+    const doc = new Document(16, 16);
+    const a = doc.addLayer("A");
+    doc.activeId = a.id;
+    expect(doc.toggleLink(a.id)).toBe(false);
+  });
+
+  it("clears a link group when a peer is deleted", () => {
+    const doc = new Document(16, 16);
+    const a = doc.addLayer("A");
+    const b = doc.addLayer("B");
+    doc.activeId = a.id;
+    doc.toggleLink(b.id);
+    doc.activeId = b.id;
+    doc.deleteActive();
+    expect(a.linkGroup).toBeNull();
+  });
+
+  it("preserves link groups across undo snapshots", () => {
+    const doc = new Document(16, 16);
+    const a = doc.addLayer("A");
+    const b = doc.addLayer("B");
+    doc.activeId = a.id;
+    doc.toggleLink(b.id);
+    const hist = new History();
+    hist.push(doc);
+    doc.unlink(b.id);
+    expect(a.linkGroup).toBeNull();
+    hist.undo(doc);
+    expect(doc.layers.find((l) => l.id === a.id).linkGroup).toBeTruthy();
+    expect(doc.layers.find((l) => l.id === b.id).linkGroup).toBe(
+      doc.layers.find((l) => l.id === a.id).linkGroup
+    );
+  });
 });
 
 describe("fill layer", () => {

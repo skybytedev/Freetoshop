@@ -12,8 +12,9 @@
       <div class="brand">Freetoshop</div>
       <div class="file-actions">
         <button type="button" data-act="new">New</button>
-        <label class="btn">Open<input id="file-open" type="file" accept="image/*" multiple hidden /></label>
-        <button type="button" data-act="export">Export PNG</button>
+        <label class="btn">Open<input id="file-open" type="file" accept="image/*,.json,.freetoshop.json,application/json" multiple hidden /></label>
+        <button type="button" data-act="save" title="Save project (Ctrl/Cmd+S)">Save</button>
+        <button type="button" data-act="export" title="Flattened PNG">Export PNG</button>
       </div>
       <div id="tool-options" class="tool-options"></div>
       <label class="sam-url">
@@ -28,7 +29,7 @@
 
       <main class="stage-wrap" id="stage-wrap">
         <canvas id="view"></canvas>
-        <div id="hint" class="hint">Drop an image to start — or Open</div>
+        <div id="hint" class="hint">Drop an image to start — or Open. Save keeps layers for later.</div>
         <input id="text-input" class="text-input" type="text" hidden />
       </main>
 
@@ -76,10 +77,6 @@
             <button type="button" data-act="add-layer" title="New layer">+</button>
           </div>
           <ul id="layer-list" class="layer-list"></ul>
-          <div class="layer-actions">
-            <button type="button" data-act="dup-layer">Duplicate</button>
-            <button type="button" data-act="del-layer">Delete</button>
-          </div>
           <label class="slider">
             Layer opacity
             <input id="layer-opacity" type="range" min="0" max="100" value="100" />
@@ -88,6 +85,12 @@
         </section>
       </aside>
     </div>
+  </div>
+  <div id="layer-menu" class="ctx-menu" hidden role="menu">
+    <button type="button" role="menuitem" data-layer-cmd="rename">Rename</button>
+    <button type="button" role="menuitem" data-layer-cmd="duplicate">Duplicate</button>
+    <button type="button" role="menuitem" data-layer-cmd="link">Link / Unlink</button>
+    <button type="button" role="menuitem" data-layer-cmd="delete">Delete</button>
   </div>
   <script type="module" src="js/main.js"></script>
 </body>

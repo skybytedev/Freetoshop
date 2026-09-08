@@ -8,6 +8,8 @@ describe("tools list", () => {
     const ids = TOOLS.map((t) => t.id);
     expect(ids).toEqual([
       "move",
+      "hand",
+      "zoom",
       "transform",
       "smart",
       "lasso",

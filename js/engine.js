@@ -1,6 +1,16 @@
 let nextId = 1;
 const uid = (p) => `${p}-${nextId++}`;
 
+/** Keep new layer ids unique after loading a saved project. */
+export function syncUidCounter(ids) {
+  let max = nextId;
+  for (const id of ids) {
+    const m = String(id).match(/(\d+)$/);
+    if (m) max = Math.max(max, Number(m[1]) + 1);
+  }
+  nextId = max;
+}
+
 export function makeCanvas(w, h) {
   const c = document.createElement("canvas");
   c.width = Math.max(1, w);
@@ -24,6 +34,7 @@ export class Layer {
     this.opacity = 1;
     this.x = x;
     this.y = y;
+    this.linkGroup = null;
     const { canvas, ctx } = makeCanvas(w, h);
     this.canvas = canvas;
     this.ctx = ctx;
@@ -77,8 +88,74 @@ export class Document {
     if (this.layers.length <= 1) return;
     const i = this.layers.findIndex((l) => l.id === this.activeId);
     if (i < 0) return;
+    const removed = this.layers[i];
+    const group = removed.linkGroup;
     this.layers.splice(i, 1);
     this.activeId = this.layers[Math.max(0, i - 1)].id;
+    if (group) this.pruneLinkGroup(group);
+  }
+
+  /** Topmost visible layer with opaque pixels at document (x, y), or null. */
+  hitTestLayer(x, y, alphaThreshold = 8) {
+    for (let i = this.layers.length - 1; i >= 0; i--) {
+      const layer = this.layers[i];
+      if (!layer.visible) continue;
+      const lx = Math.floor(x - layer.x);
+      const ly = Math.floor(y - layer.y);
+      if (lx < 0 || ly < 0 || lx >= layer.canvas.width || ly >= layer.canvas.height) continue;
+      if (layer.ctx.getImageData(lx, ly, 1, 1).data[3] > alphaThreshold) return layer;
+    }
+    return null;
+  }
+
+  linkedLayers(layerOrId) {
+    const layer = typeof layerOrId === "string"
+      ? this.layers.find((l) => l.id === layerOrId)
+      : layerOrId;
+    if (!layer?.linkGroup) return layer ? [layer] : [];
+    return this.layers.filter((l) => l.linkGroup === layer.linkGroup);
+  }
+
+  pruneLinkGroup(group) {
+    if (!group) return;
+    const peers = this.layers.filter((l) => l.linkGroup === group);
+    if (peers.length <= 1) {
+      for (const l of peers) l.linkGroup = null;
+    }
+  }
+
+  /**
+   * Toggle link between `layerId` and the active layer (Photoshop-style).
+   * Same group moves together; stack order is unchanged.
+   */
+  toggleLink(layerId) {
+    const layer = this.layers.find((l) => l.id === layerId);
+    if (!layer) return false;
+    const active = this.active;
+    if (layer.linkGroup) {
+      const group = layer.linkGroup;
+      layer.linkGroup = null;
+      this.pruneLinkGroup(group);
+      return true;
+    }
+    if (!active || active.id === layer.id) return false;
+    if (active.linkGroup) {
+      layer.linkGroup = active.linkGroup;
+    } else {
+      const group = uid("link");
+      active.linkGroup = group;
+      layer.linkGroup = group;
+    }
+    return true;
+  }
+
+  unlink(layerId) {
+    const layer = this.layers.find((l) => l.id === layerId);
+    if (!layer?.linkGroup) return false;
+    const group = layer.linkGroup;
+    layer.linkGroup = null;
+    this.pruneLinkGroup(group);
+    return true;
   }
 
   moveActive(dir) {
@@ -87,6 +164,23 @@ export class Document {
     if (i < 0 || j < 0 || j >= this.layers.length) return;
     const [row] = this.layers.splice(i, 1);
     this.layers.splice(j, 0, row);
+  }
+
+  /** Move a layer to a new stack index (0 = bottom). Returns true if order changed. */
+  reorder(fromIndex, toIndex) {
+    const n = this.layers.length;
+    if (fromIndex < 0 || fromIndex >= n) return false;
+    const to = Math.max(0, Math.min(n - 1, toIndex | 0));
+    if (fromIndex === to) return false;
+    const [row] = this.layers.splice(fromIndex, 1);
+    this.layers.splice(to, 0, row);
+    return true;
+  }
+
+  moveLayer(id, toIndex) {
+    const from = this.layers.findIndex((l) => l.id === id);
+    if (from < 0) return false;
+    return this.reorder(from, toIndex);
   }
 
   resize(w, h) {
@@ -288,6 +382,7 @@ export class Document {
         opacity: l.opacity,
         x: l.x,
         y: l.y,
+        linkGroup: l.linkGroup,
         revision: l.revision,
         canvas: cloneCanvas(l.canvas),
       })),
@@ -308,6 +403,7 @@ export class Document {
       l.visible = s.visible;
       l.locked = s.locked;
       l.opacity = s.opacity;
+      l.linkGroup = s.linkGroup || null;
       l.revision = s.revision;
       l.canvas = cloneCanvas(s.canvas);
       l.ctx = l.canvas.getContext("2d", { willReadFrequently: true });

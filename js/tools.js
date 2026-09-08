@@ -3,6 +3,8 @@ import { applyHandle, hitTransform } from "./transform.js";
 
 export const TOOLS = [
   { id: "move", name: "Move", key: "v" },
+  { id: "hand", name: "Hand", key: "h" },
+  { id: "zoom", name: "Zoom", key: "z" },
   { id: "transform", name: "Free Transform", key: "f" },
   { id: "smart", name: "Smart Select", key: "w" },
   { id: "lasso", name: "Lasso", key: "l" },
@@ -13,14 +15,54 @@ export const TOOLS = [
   { id: "text", name: "Text", key: "t" },
 ];
 
+/** Tools whose stroke diameter matches the brush size slider. */
+export function usesSizeCursor(tool) {
+  return tool === "brush" || tool === "eraser" || tool === "mask";
+}
+
+/** Screen-space distance from a point to the view center. */
+export function radialDistance(point, center) {
+  return Math.hypot(point.x - center.x, point.y - center.y);
+}
+
+/**
+ * Zoom in when the pointer moves farther from screen center (positive distDelta),
+ * zoom out when it moves closer. Clamped to [min, max].
+ */
+export function nextZoomFromRadialDelta(zoom, distDelta, opts = {}) {
+  const sensitivity = opts.sensitivity ?? 0.008;
+  const min = opts.min ?? 0.08;
+  const max = opts.max ?? 8;
+  const factor = Math.exp(distDelta * sensitivity);
+  return Math.min(max, Math.max(min, zoom * factor));
+}
+
+/** Draw a diameter preview circle in document space (ctx already zoom-transformed). */
+export function drawSizeCursor(ctx, pos, size, zoom) {
+  if (!pos || !(size > 0)) return;
+  const r = size / 2;
+  const lw = 1 / zoom;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+  ctx.lineWidth = lw;
+  ctx.strokeStyle = "rgba(0,0,0,0.85)";
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, Math.max(0, r - lw), 0, Math.PI * 2);
+  ctx.strokeStyle = "rgba(255,255,255,0.95)";
+  ctx.stroke();
+  ctx.restore();
+}
 export function createTools(app) {
   const drag = {
     down: false,
     last: null,
     points: [],
-    startLayer: null,
+    startPositions: null,
     origin: null,
     xfStart: null,
+    zoomLast: null,
   };
 
   function color() {
@@ -47,9 +89,30 @@ export function createTools(app) {
       drag.last = pos;
       drag.points = [pos];
       drag.origin = pos;
-      drag.startLayer = app.doc.active ? { x: app.doc.active.x, y: app.doc.active.y } : null;
+      drag.startPositions = null;
+      drag.zoomLast = null;
 
-      if (tool === "brush" || tool === "eraser") {
+      if (tool === "hand") {
+        app.panning = true;
+        app.panLast = { x: ev.clientX, y: ev.clientY };
+        return;
+      }
+
+      if (tool === "zoom") {
+        drag.zoomLast = { x: ev.clientX, y: ev.clientY };
+        return;
+      }
+
+      if (tool === "move") {
+        const hit = app.doc.hitTestLayer(pos.x, pos.y);
+        if (hit && hit.id !== app.doc.activeId) {
+          app.selectLayer?.(hit.id);
+        }
+        const peers = app.doc.linkedLayers(app.doc.active);
+        drag.startPositions = Object.fromEntries(
+          peers.filter((l) => !l.locked).map((l) => [l.id, { x: l.x, y: l.y }])
+        );
+      } else if (tool === "brush" || tool === "eraser") {
         app.history.push(app.doc);
         stroke(app, tool, pos, pos);
       } else if (tool === "mask") {
@@ -74,6 +137,8 @@ export function createTools(app) {
             w: app.xf.w,
             h: app.xf.h,
             rotation: app.xf.rotation,
+            scaleX: app.xf.scaleX ?? 1,
+            scaleY: app.xf.scaleY ?? 1,
           };
         }
       }
@@ -81,15 +146,29 @@ export function createTools(app) {
 
     pointermove(tool, ev, pos) {
       if (!drag.down) return;
-      if (tool === "brush" || tool === "eraser") {
+      if (tool === "hand" || app.panning) return;
+      if (tool === "zoom" && drag.zoomLast) {
+        const center = app.viewCenter?.() || { x: 0, y: 0 };
+        const cur = { x: ev.clientX, y: ev.clientY };
+        const delta = radialDistance(cur, center) - radialDistance(drag.zoomLast, center);
+        app.doc.zoom = nextZoomFromRadialDelta(app.doc.zoom, delta);
+        app.zoomDragDir = delta === 0 ? app.zoomDragDir : delta > 0 ? "in" : "out";
+        drag.zoomLast = cur;
+      } else if (tool === "brush" || tool === "eraser") {
         stroke(app, tool, drag.last, pos);
       } else if (tool === "mask") {
         paintMask(app.doc, drag.last, pos, size(), !ev.altKey);
       } else if (tool === "lasso" || tool === "crop") {
         drag.points.push(pos);
-      } else if (tool === "move" && app.doc.active && !app.doc.active.locked) {
-        app.doc.active.x = drag.startLayer.x + (pos.x - drag.origin.x);
-        app.doc.active.y = drag.startLayer.y + (pos.y - drag.origin.y);
+      } else if (tool === "move" && drag.startPositions && drag.origin) {
+        const dx = pos.x - drag.origin.x;
+        const dy = pos.y - drag.origin.y;
+        for (const layer of app.doc.layers) {
+          const start = drag.startPositions[layer.id];
+          if (!start) continue;
+          layer.x = start.x + dx;
+          layer.y = start.y + dy;
+        }
       } else if (tool === "transform" && drag.xfStart && app.xf) {
         applyHandle(app.xf, drag.xfStart, pos, ev.shiftKey);
       }
@@ -99,7 +178,10 @@ export function createTools(app) {
     pointerup(tool, ev, pos) {
       if (!drag.down) return;
       drag.down = false;
-      if (tool === "lasso") {
+      if (tool === "zoom") {
+        drag.zoomLast = null;
+        app.zoomDragDir = null;
+      } else if (tool === "lasso") {
         drag.points.push(pos);
         if (drag.points.length >= 3) {
           app.history.push(app.doc);
@@ -119,8 +201,12 @@ export function createTools(app) {
         fillPolygon(app.doc, rect, "replace");
         app.doc.cropToSelection();
         drag.points = [];
-      } else if (tool === "move" && app.doc.active) {
-        app.doc.active.touch();
+      } else if (tool === "move" && drag.startPositions) {
+        for (const id of Object.keys(drag.startPositions)) {
+          const layer = app.doc.layers.find((l) => l.id === id);
+          layer?.touch();
+        }
+        drag.startPositions = null;
       } else if (tool === "transform") {
         drag.xfStart = null;
       }

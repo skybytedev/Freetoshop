@@ -110,6 +110,13 @@ class Fake2D {
     this._d = _d * cos - _b * sin;
   }
 
+  scale(sx, sy = sx) {
+    this._a *= sx;
+    this._b *= sx;
+    this._c *= sy;
+    this._d *= sy;
+  }
+
   setTransform(a, b, c, d, e, f) {
     this._a = a;
     this._b = b;
@@ -253,6 +260,16 @@ class Fake2D {
     this._path.push({ t: "L", x, y });
   }
 
+  arc(x, y, r, a0, a1) {
+    const steps = Math.max(8, Math.ceil(Math.abs(a1 - a0) * Math.max(4, r)));
+    for (let i = 0; i <= steps; i++) {
+      const t = a0 + ((a1 - a0) * i) / steps;
+      const px = x + Math.cos(t) * r;
+      const py = y + Math.sin(t) * r;
+      this._path.push({ t: i === 0 ? "M" : "L", x: px, y: py });
+    }
+  }
+
   closePath() {
     this._path.push({ t: "Z" });
   }
@@ -356,6 +373,21 @@ class FakeCanvas {
 
   toBlob(cb, type = "image/png") {
     cb(new Blob([this.data], { type }));
+  }
+
+  toDataURL(type = "image/png") {
+    const b64 =
+      typeof Buffer !== "undefined"
+        ? Buffer.from(this.data).toString("base64")
+        : (() => {
+            let s = "";
+            const chunk = 0x8000;
+            for (let i = 0; i < this.data.length; i += chunk) {
+              s += String.fromCharCode(...this.data.subarray(i, i + chunk));
+            }
+            return btoa(s);
+          })();
+    return `data:application/x-freetoshop-rgba;${this._width}x${this._height};base64,${b64}`;
   }
 }
 

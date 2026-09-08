@@ -18,6 +18,8 @@ export function startTransform(layer) {
     cx: layer.x + w / 2,
     cy: layer.y + h / 2,
     rotation: 0,
+    scaleX: 1,
+    scaleY: 1,
   };
 }
 
@@ -108,34 +110,56 @@ export function applyHandle(xf, start, pos, shiftKey) {
   }
 
   const [axSign, aySign] = ANCHOR[start.handle];
-  const loc = toLocal({ ...start, rotation: start.rotation, cx: start.cx, cy: start.cy }, pos.x, pos.y);
+  const loc = toLocal({ cx: start.cx, cy: start.cy, rotation: start.rotation }, pos.x, pos.y);
   let mx = loc.x;
   let my = loc.y;
   const ax = axSign * (start.w / 2);
   const ay = aySign * (start.h / 2);
-  if (start.handle === "n" || start.handle === "s") mx = -ax;
-  if (start.handle === "e" || start.handle === "w") my = -ay;
+  const affectsX = start.handle !== "n" && start.handle !== "s";
+  const affectsY = start.handle !== "e" && start.handle !== "w";
+  if (!affectsX) mx = 0;
+  if (!affectsY) my = 0;
 
-  let newW = Math.max(8, Math.abs(mx - ax));
-  let newH = Math.max(8, Math.abs(my - ay));
+  const startSX = start.scaleX ?? 1;
+  const startSY = start.scaleY ?? 1;
+  let newW = start.w;
+  let newH = start.h;
+  let scaleX = startSX;
+  let scaleY = startSY;
+
+  if (affectsX) {
+    const signed = mx - ax;
+    newW = Math.max(8, Math.abs(signed));
+    const natural = -axSign;
+    scaleX = (Math.sign(signed) || natural) === natural ? startSX : -startSX;
+  }
+  if (affectsY) {
+    const signed = my - ay;
+    newH = Math.max(8, Math.abs(signed));
+    const natural = -aySign;
+    scaleY = (Math.sign(signed) || natural) === natural ? startSY : -startSY;
+  }
+
   if (shiftKey && start.w > 0 && start.h > 0) {
     const ratio = start.w / start.h;
-    if (start.handle === "n" || start.handle === "s") newW = newH * ratio;
-    else if (start.handle === "e" || start.handle === "w") newH = newW / ratio;
+    if (!affectsX) newW = newH * ratio;
+    else if (!affectsY) newH = newW / ratio;
     else if (newW / newH > ratio) newH = newW / ratio;
     else newW = newH * ratio;
   }
 
-  const dirX = mx >= ax ? 1 : -1;
-  const dirY = my >= ay ? 1 : -1;
-  const midX = ax + dirX * (newW / 2);
-  const midY = ay + dirY * (newH / 2);
+  const dirX = affectsX ? (mx >= ax ? 1 : -1) : 0;
+  const dirY = affectsY ? (my >= ay ? 1 : -1) : 0;
+  const midX = affectsX ? ax + dirX * (newW / 2) : 0;
+  const midY = affectsY ? ay + dirY * (newH / 2) : 0;
   const world = toWorld({ cx: start.cx, cy: start.cy, rotation: start.rotation }, midX, midY);
   xf.w = newW;
   xf.h = newH;
   xf.cx = world.x;
   xf.cy = world.y;
   xf.rotation = start.rotation;
+  xf.scaleX = scaleX;
+  xf.scaleY = scaleY;
 }
 
 export function applyTransform(layer, xf) {
@@ -153,6 +177,7 @@ export function applyTransform(layer, xf) {
   next.ctx.imageSmoothingQuality = "high";
   next.ctx.translate(xf.cx - minx, xf.cy - miny);
   next.ctx.rotate(xf.rotation);
+  next.ctx.scale(xf.scaleX ?? 1, xf.scaleY ?? 1);
   next.ctx.drawImage(xf.src, -xf.w / 2, -xf.h / 2, xf.w, xf.h);
   layer.canvas = next.canvas;
   layer.ctx = next.ctx;
@@ -199,6 +224,7 @@ export function drawTransformedLayer(ctx, layer, xf) {
   ctx.globalAlpha = layer.opacity;
   ctx.translate(xf.cx, xf.cy);
   ctx.rotate(xf.rotation);
+  ctx.scale(xf.scaleX ?? 1, xf.scaleY ?? 1);
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(xf.src, -xf.w / 2, -xf.h / 2, xf.w, xf.h);
   ctx.restore();
